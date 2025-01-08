@@ -1,12 +1,11 @@
-// Demo code for the bar chart primitive.
 package main
 
 import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
-	"unicode"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/navidys/tvxwidgets"
@@ -22,21 +21,12 @@ func createBorderedFrame(inner tview.Primitive) *tview.Frame {
 	frame.SetBorder(true).SetBorderColor(tcell.ColorLightSkyBlue)
 	return frame
 }
-func isSymbol(s string) bool {
-	for _, r := range s {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			return false
-		}
-	}
-	return true
-}
+
 func main() {
 	app := tview.NewApplication()
 	logicalCpuCount, _ := cpu.Counts(true)
-	// Создаем массив для индикаторов CPU
 	cpuGauges := make([]*tvxwidgets.UtilModeGauge, logicalCpuCount)
 
-	// Создаем индикаторы для каждого процессора
 	for i := 0; i < logicalCpuCount; i++ {
 		cpuGauge := tvxwidgets.NewUtilModeGauge()
 		cpuGauge.SetLabel(fmt.Sprintf(" CPU %d ", i))
@@ -45,26 +35,31 @@ func main() {
 		cpuGauges[i] = cpuGauge
 	}
 
-	// Функция для обновления индикаторов CPU
+	var wg sync.WaitGroup
+
 	updateCpuGauges := func() {
-		tick := time.NewTicker(500 * time.Millisecond)
-		for {
-			select {
-			case <-tick.C:
-				v, err := cpu.Percent(500*time.Millisecond, true) // true для получения данных по каждому процессору
-				if err != nil {
-					fmt.Printf("Error getting CPU percent: %v\n", err)
-					return
-				}
-				for i := 0; i < logicalCpuCount; i++ {
-					cpuGauges[i].SetValue(v[i]) // Обновляем значение для каждого индикатора
-				}
-				app.Draw()
+		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("Recovered in updateCpuGauges: %v\n", r)
 			}
+		}()
+		tick := time.NewTicker(1 * time.Second)
+		defer tick.Stop()
+		for {
+			<-tick.C
+			v, err := cpu.Percent(time.Second, true)
+			if err != nil {
+				fmt.Printf("Error getting CPU percent: %v\n", err)
+				return
+			}
+			for i := 0; i < logicalCpuCount; i++ {
+				cpuGauges[i].SetValue(v[i])
+			}
+			app.Draw()
 		}
 	}
 
-	// memory usage gauge
 	memGauge := tvxwidgets.NewUtilModeGauge()
 	memGauge.SetLabel(" mem   ")
 	memGauge.SetLabelColor(tcell.ColorLightSkyBlue)
@@ -72,8 +67,11 @@ func main() {
 	memGauge.SetWarnPercentage(65)
 	memGauge.SetCritPercentage(80)
 	memGauge.SetBorder(false)
+
 	updateMemGauge := func() {
-		tick := time.NewTicker(500 * time.Millisecond)
+		defer wg.Done()
+		tick := time.NewTicker(500 * time.Second)
+		defer tick.Stop()
 		for {
 			select {
 			case <-tick.C:
@@ -89,7 +87,6 @@ func main() {
 		}
 	}
 
-	// swap usage gauge
 	swapGauge := tvxwidgets.NewUtilModeGauge()
 	swapGauge.SetLabel(" swap  ")
 	swapGauge.SetLabelColor(tcell.ColorLightSkyBlue)
@@ -97,8 +94,11 @@ func main() {
 	swapGauge.SetWarnPercentage(65)
 	swapGauge.SetCritPercentage(80)
 	swapGauge.SetBorder(false)
+
 	updateSwapGauge := func() {
-		tick := time.NewTicker(500 * time.Millisecond)
+		defer wg.Done()
+		tick := time.NewTicker(500 * time.Second)
+		defer tick.Stop()
 		for {
 			select {
 			case <-tick.C:
@@ -116,18 +116,18 @@ func main() {
 
 	cpuFlex := tview.NewFlex().SetDirection(tview.FlexRow)
 	for _, gauge := range cpuGauges {
-		cpuFlex.AddItem(gauge, 1, 1, false) // Добавляем каждый индикатор в Flex-контейнер
+		cpuFlex.AddItem(gauge, 1, 1, false)
 	}
 
-	// Создаем рамку вокруг Flex-контейнера
 	processTable := tview.NewTable().SetBorders(true)
-	// Добавляем заголовки таблицы
-	processTable.SetFixed(1, 0) // Устанавливаем фиксированную высоту для заголовков таблицы
+	processTable.SetFixed(1, 0)
 
-	sortBy := "cpu" // Переменная для отслеживания текущего порядка сортировки
+	sortBy := "cpu"
 	updateProcessList := func() {
+		defer wg.Done()
 		tick := time.NewTicker(1 * time.Second)
-		defer tick.Stop() // Останавливаем тикер при выходе из функции
+		defer tick.Stop()
+
 		for {
 			<-tick.C
 			procs, err := process.Processes()
@@ -135,87 +135,80 @@ func main() {
 				fmt.Printf("Error getting processes: %v\n", err)
 				return
 			}
+			processData := make([]struct {
+				proc *process.Process
+				cpu  float64
+				mem  uint64
+				name string
+				user string
+			}, len(procs))
 
-			// Сортируем процессы в зависимости от текущего порядка сортировки
-			sort.Slice(procs, func(i, j int) bool {
+			for i, proc := range procs {
+				cpu, _ := proc.CPUPercent()
+				memInfo, _ := proc.MemoryInfo()
+				name, _ := proc.Name()
+				user, err := proc.Username()
+				if err != nil {
+					user = "N/A"
+				}
+
+				processData[i] = struct {
+					proc *process.Process
+					cpu  float64
+					mem  uint64
+					name string
+					user string
+				}{
+					proc: proc,
+					cpu:  cpu,
+					mem:  memInfo.RSS / (1024 * 1024), // В мегабайтах
+					name: name,
+					user: user,
+				}
+			}
+
+			sort.Slice(processData, func(i, j int) bool {
 				if sortBy == "cpu" {
-					cpuI, _ := procs[i].CPUPercent()
-					cpuJ, _ := procs[j].CPUPercent()
-					return cpuI > cpuJ
+					return processData[i].cpu > processData[j].cpu
 				} else if sortBy == "name" {
-					nameI, _ := procs[i].Name()
-					nameJ, _ := procs[j].Name()
-					// Приводим имена к нижнему регистру для сравнения
-					lowerNameI := strings.ToLower(nameI)
-					lowerNameJ := strings.ToLower(nameJ)
-
-					// Сравниваем имена, учитывая символы
-					if lowerNameI == lowerNameJ {
-						// Если имена равны, сортируем по оригинальному имени
-						// Символы должны быть ниже букв
-						if isSymbol(nameI) && !isSymbol(nameJ) {
-							return false // nameI (символ) считается "больше"
-						} else if !isSymbol(nameI) && isSymbol(nameJ) {
-							return true // nameJ (символ) считается "больше"
-						}
-						return nameI > nameJ // Оригинальные имена: символы ниже букв
-					}
-
-					// Сравниваем по нижнему регистру
-					return lowerNameI < lowerNameJ
+					return strings.ToLower(processData[i].name) < strings.ToLower(processData[j].name)
 				} else {
-					memI, _ := procs[i].MemoryInfo() // Получаем информацию о памяти
-					memJ, _ := procs[j].MemoryInfo()
-
-					return (memI.RSS / (1024 * 1024)) > (memJ.RSS / (1024 * 1024)) // Сравниваем в мегабайтах
+					return processData[i].mem > processData[j].mem
 				}
 			})
 			processTable.Clear()
-			// Добавляем заголовки
 			processTable.SetCell(0, 0, tview.NewTableCell("PID").SetTextColor(tcell.ColorLightSkyBlue).SetAlign(tview.AlignCenter))
 			processTable.SetCell(0, 1, tview.NewTableCell("User").SetTextColor(tcell.ColorLightSkyBlue).SetAlign(tview.AlignCenter))
 			processTable.SetCell(0, 2, tview.NewTableCell("CPU Usage %").SetTextColor(tcell.ColorLightSkyBlue).SetAlign(tview.AlignCenter))
 			processTable.SetCell(0, 3, tview.NewTableCell("Memory Usage Mb").SetTextColor(tcell.ColorLightSkyBlue).SetAlign(tview.AlignCenter))
 			processTable.SetCell(0, 4, tview.NewTableCell("Process Name").SetTextColor(tcell.ColorLightSkyBlue).SetAlign(tview.AlignCenter))
 
-			// Ограничиваем количество отображаемых процессов
-			for i, proc := range procs {
-				if i >= 50 { // Показываем только топ 50 процессов
+			for i, data := range processData {
+				if i >= 30 { // Показываем только топ 30 процессов
 					break
 				}
-				name, _ := proc.Name()
-				pid := proc.Pid // Получаем PID процесса (просто используем переменную)
-				user, err := proc.Username()
-				if err != nil {
-					user = "N/A"
-				}
-				cpuPercent, _ := proc.CPUPercent()
-				memPercent, _ := proc.MemoryInfo()
-				memPercentMB := memPercent.RSS / (1024 * 1024)
-				processTable.SetCell(i+1, 0, tview.NewTableCell(fmt.Sprintf("%d", pid)).SetAlign(tview.AlignCenter))
-				processTable.SetCell(i+1, 1, tview.NewTableCell(fmt.Sprint(user)).SetAlign(tview.AlignCenter))
-				processTable.SetCell(i+1, 2, tview.NewTableCell(fmt.Sprintf("%.2f", cpuPercent)).SetAlign(tview.AlignCenter))
-				processTable.SetCell(i+1, 3, tview.NewTableCell(fmt.Sprintf("%d", memPercentMB)).SetAlign(tview.AlignCenter))
-				processTable.SetCell(i+1, 4, tview.NewTableCell(name).SetAlign(tview.AlignLeft))
-
+				processTable.SetCell(i+1, 0, tview.NewTableCell(fmt.Sprintf("%d", data.proc.Pid)).SetAlign(tview.AlignCenter))
+				processTable.SetCell(i+1, 1, tview.NewTableCell(data.user).SetAlign(tview.AlignCenter))
+				processTable.SetCell(i+1, 2, tview.NewTableCell(fmt.Sprintf("%.2f", data.cpu)).SetAlign(tview.AlignCenter))
+				processTable.SetCell(i+1, 3, tview.NewTableCell(fmt.Sprintf("%d", data.mem)).SetAlign(tview.AlignCenter))
+				processTable.SetCell(i+1, 4, tview.NewTableCell(data.name).SetAlign(tview.AlignLeft))
 			}
 
-			app.Draw() // Обновляем отображение приложения
+			app.Draw()
 		}
 	}
 
-	// Устанавливаем обработчик ввода
 	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
 		case tcell.KeyRune:
 			switch event.Rune() {
-			case 'm': // Нажата клавиша "m"
+			case 'm':
 				sortBy = "memory"
 				processTable.ScrollToBeginning()
-			case 'c': // Нажата клавиша "c"
+			case 'c':
 				sortBy = "cpu"
 				processTable.ScrollToBeginning()
-			case 'n': // Нажата клавиша "n"
+			case 'n':
 				sortBy = "name"
 				processTable.ScrollToBeginning()
 			}
@@ -223,19 +216,18 @@ func main() {
 		return event
 	})
 
-	go updateProcessList()
+	wg.Add(4) // Увеличиваем счетчик горутин
 	go updateCpuGauges()
 	go updateMemGauge()
 	go updateSwapGauge()
+	go updateProcessList()
 
-	// Создаем Flex-контейнер для левой половины
 	leftFlex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(cpuFlex, logicalCpuCount, 1, true).
 		AddItem(memGauge, 1, 1, false).
 		AddItem(swapGauge, 1, 1, false)
 	leftFlexBordered := createBorderedFrame(leftFlex)
 
-	// Создаем Flex-контейнер для правой половины
 	rightFlex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(processTable, 0, 1, false)
 	rightFlexBordered := createBorderedFrame(rightFlex)
@@ -247,5 +239,6 @@ func main() {
 	if err := app.SetRoot(mainFlex, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
 	}
-	app.SetFocus(rightFlexBordered)
+
+	wg.Wait() // Ждем завершения всех горутин
 }
