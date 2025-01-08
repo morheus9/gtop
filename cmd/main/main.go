@@ -125,7 +125,7 @@ func main() {
 	sortBy := "cpu"
 	updateProcessList := func() {
 		defer wg.Done()
-		tick := time.NewTicker(1 * time.Second)
+		tick := time.NewTicker(2 * time.Second) // Увеличьте интервал до 2 секунд
 		defer tick.Stop()
 
 		for {
@@ -135,15 +135,16 @@ func main() {
 				fmt.Printf("Error getting processes: %v\n", err)
 				return
 			}
+
 			processData := make([]struct {
 				proc *process.Process
 				cpu  float64
 				mem  uint64
 				name string
 				user string
-			}, len(procs))
+			}, 0)
 
-			for i, proc := range procs {
+			for _, proc := range procs {
 				cpu, _ := proc.CPUPercent()
 				memInfo, _ := proc.MemoryInfo()
 				name, _ := proc.Name()
@@ -152,7 +153,7 @@ func main() {
 					user = "N/A"
 				}
 
-				processData[i] = struct {
+				processData = append(processData, struct {
 					proc *process.Process
 					cpu  float64
 					mem  uint64
@@ -164,9 +165,10 @@ func main() {
 					mem:  memInfo.RSS / (1024 * 1024), // В мегабайтах
 					name: name,
 					user: user,
-				}
+				})
 			}
 
+			// Сортировка процессов
 			sort.Slice(processData, func(i, j int) bool {
 				if sortBy == "cpu" {
 					return processData[i].cpu > processData[j].cpu
@@ -176,6 +178,7 @@ func main() {
 					return processData[i].mem > processData[j].mem
 				}
 			})
+
 			processTable.Clear()
 			processTable.SetCell(0, 0, tview.NewTableCell("PID").SetTextColor(tcell.ColorLightSkyBlue).SetAlign(tview.AlignCenter))
 			processTable.SetCell(0, 1, tview.NewTableCell("User").SetTextColor(tcell.ColorLightSkyBlue).SetAlign(tview.AlignCenter))
