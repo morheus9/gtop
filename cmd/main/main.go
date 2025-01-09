@@ -125,7 +125,7 @@ func main() {
 	sortBy := "cpu"
 	updateProcessList := func() {
 		defer wg.Done()
-		tick := time.NewTicker(2 * time.Second) // Увеличьте интервал до 2 секунд
+		tick := time.NewTicker(2 * time.Second)
 		defer tick.Stop()
 
 		for {
