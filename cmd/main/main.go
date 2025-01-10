@@ -72,18 +72,16 @@ func main() {
 		defer wg.Done()
 		tick := time.NewTicker(1 * time.Second)
 		defer tick.Stop()
-		for {
-			select {
-			case <-tick.C:
-				v, err := mem.VirtualMemory()
-				if err != nil {
-					fmt.Printf("Error getting memory percent: %v\n", err)
-					return
-				}
-				memoryUsed := float64(v.UsedPercent)
-				memGauge.SetValue(memoryUsed)
-				app.Draw()
+
+		for range tick.C {
+			v, err := mem.VirtualMemory()
+			if err != nil {
+				fmt.Printf("Error getting memory percent: %v\n", err)
+				return
 			}
+			memoryUsed := float64(v.UsedPercent)
+			memGauge.SetValue(memoryUsed)
+			app.Draw()
 		}
 	}
 
@@ -99,18 +97,16 @@ func main() {
 		defer wg.Done()
 		tick := time.NewTicker(2 * time.Second)
 		defer tick.Stop()
-		for {
-			select {
-			case <-tick.C:
-				v, err := mem.VirtualMemory()
-				if err != nil {
-					fmt.Printf("Error getting swap memory: %v\n", err)
-					return
-				}
-				swapUsed := float64(v.SwapCached)
-				swapGauge.SetValue(swapUsed)
-				app.Draw()
+
+		for range tick.C {
+			v, err := mem.VirtualMemory()
+			if err != nil {
+				fmt.Printf("Error getting swap memory: %v\n", err)
+				return
 			}
+			swapUsed := float64(v.SwapCached)
+			swapGauge.SetValue(swapUsed)
+			app.Draw()
 		}
 	}
 
