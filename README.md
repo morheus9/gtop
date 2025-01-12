@@ -9,11 +9,11 @@ just click "M"
 ```
 - by cpu consumption
 ```
-just click "c"
+just click "C"
 ```
 - by process name
 ```
-just click "n"
+just click "N"
 ```
 
 
