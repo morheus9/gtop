@@ -10,6 +10,8 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/navidys/tvxwidgets"
 	"github.com/rivo/tview"
+	"github.com/shirou/gopsutil/host"
+	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/process"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
@@ -29,10 +31,12 @@ func main() {
 
 	for i := 0; i < logicalCpuCount; i++ {
 		cpuGauge := tvxwidgets.NewUtilModeGauge()
-		cpuGauge.SetLabel(fmt.Sprintf(" CPU %d ", i))
-		cpuGauge.SetLabelColor(tcell.ColorLightSkyBlue)
+		cpuGauge.SetLabel(fmt.Sprintf(" CPU %d ", i+1))
+		cpuGauge.SetLabelColor(tcell.ColorAntiqueWhite)
 		cpuGauge.SetBorder(false)
 		cpuGauges[i] = cpuGauge
+		cpuGauge.SetRect(10, 3, 50, 3)
+
 	}
 
 	var wg sync.WaitGroup
@@ -60,9 +64,61 @@ func main() {
 		}
 	}
 
+	platform := tview.NewTextView()
+	platform.SetLabel(" Platform       ")
+	platform.SetBorder(false)
+	platformOS, _, platformVersion, err := host.PlatformInformation()
+	if err != nil {
+		fmt.Println("Error retrieving platform information:", err)
+		return
+	}
+
+	platform.SetText(fmt.Sprintf("%s %s", platformOS, platformVersion))
+
+	loadAvg := tview.NewTextView()
+	loadAvg.SetLabel(" Load average   ")
+	loadAvg.SetBorder(false)
+	loadAvg.SetRect(10, 3, 50, 3)
+
+	uptime := tview.NewTextView()
+	uptime.SetLabel(" Uptime         ")
+	uptime.SetBorder(false)
+	loadAvg.SetRect(10, 3, 50, 3)
+
+	updateData := func() {
+		// Получение информации о загрузке
+		loadAvgInfo, err := load.Avg()
+		if err != nil {
+			loadAvg.SetText(fmt.Sprintf("Error retrieving load average: %v", err))
+			return
+		}
+		loadAvg.SetText(fmt.Sprintf("1 min: %.2f\n5 min: %.2f\n15 min: %.2f",
+			loadAvgInfo.Load1, loadAvgInfo.Load5, loadAvgInfo.Load15))
+		loadAvg.SetText(fmt.Sprintf("%.2f    %.2f    %.2f",
+			loadAvgInfo.Load1, loadAvgInfo.Load5, loadAvgInfo.Load15))
+
+		// Получение информации о времени работы
+		uptimeInfo, err := host.Uptime()
+		if err != nil {
+			uptime.SetText(fmt.Sprintf("Error retrieving uptime: %v", err))
+			return
+		}
+		// Преобразование uptime в формат HH:MM:SS
+		hours := uptimeInfo / 3600
+		minutes := (uptimeInfo % 3600) / 60
+		seconds := uptimeInfo % 60
+		uptime.SetText(fmt.Sprintf("Uptime: %02d:%02d:%02d", hours, minutes, seconds))
+
+	}
+
+	go func() {
+		for {
+			updateData()
+			time.Sleep(5 * time.Second)
+		}
+	}()
 	memGauge := tvxwidgets.NewUtilModeGauge()
 	memGauge.SetLabel(" mem   ")
-	memGauge.SetLabelColor(tcell.ColorLightSkyBlue)
 	memGauge.SetRect(10, 3, 50, 3)
 	memGauge.SetWarnPercentage(65)
 	memGauge.SetCritPercentage(80)
@@ -87,7 +143,6 @@ func main() {
 
 	swapGauge := tvxwidgets.NewUtilModeGauge()
 	swapGauge.SetLabel(" swap  ")
-	swapGauge.SetLabelColor(tcell.ColorLightSkyBlue)
 	swapGauge.SetRect(10, 3, 50, 3)
 	swapGauge.SetWarnPercentage(65)
 	swapGauge.SetCritPercentage(80)
@@ -181,9 +236,8 @@ func main() {
 			processTable.SetCell(0, 2, tview.NewTableCell("CPU Usage %").SetTextColor(tcell.ColorLightSkyBlue).SetAlign(tview.AlignCenter))
 			processTable.SetCell(0, 3, tview.NewTableCell("Memory Usage Mb").SetTextColor(tcell.ColorLightSkyBlue).SetAlign(tview.AlignCenter))
 			processTable.SetCell(0, 4, tview.NewTableCell("Process Name").SetTextColor(tcell.ColorLightSkyBlue).SetAlign(tview.AlignCenter))
-
 			for i, data := range processData {
-				if i >= 30 { // Показываем только топ 30 процессов
+				if i >= 100 { // Показываем только топ 100 процессов
 					break
 				}
 				processTable.SetCell(i+1, 0, tview.NewTableCell(fmt.Sprintf("%d", data.proc.Pid)).SetAlign(tview.AlignCenter))
@@ -224,7 +278,10 @@ func main() {
 	leftFlex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(cpuFlex, logicalCpuCount, 1, true).
 		AddItem(memGauge, 1, 1, false).
-		AddItem(swapGauge, 1, 1, false)
+		AddItem(swapGauge, 1, 1, false).
+		AddItem(loadAvg, 1, 1, false).
+		AddItem(platform, 1, 1, false).
+		AddItem(uptime, 1, 1, false)
 	leftFlexBordered := createBorderedFrame(leftFlex)
 
 	rightFlex := tview.NewFlex().SetDirection(tview.FlexRow).
@@ -232,9 +289,8 @@ func main() {
 	rightFlexBordered := createBorderedFrame(rightFlex)
 
 	mainFlex := tview.NewFlex().SetDirection(tview.FlexColumn).
-		AddItem(leftFlexBordered, 0, 1, true).
-		AddItem(rightFlexBordered, 0, 1, true)
-
+		AddItem(leftFlexBordered, 0, 1, false).
+		AddItem(rightFlexBordered, 0, 1, false)
 	if err := app.SetRoot(mainFlex, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
 	}
