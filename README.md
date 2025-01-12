@@ -15,5 +15,3 @@ just click "C"
 ```
 just click "N"
 ```
-
-
