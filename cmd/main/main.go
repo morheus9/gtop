@@ -279,8 +279,8 @@ func main() {
 		AddItem(cpuFlex, logicalCpuCount, 1, true).
 		AddItem(memGauge, 1, 1, false).
 		AddItem(swapGauge, 1, 1, false).
-		AddItem(loadAvg, 1, 1, false).
 		AddItem(platform, 1, 1, false).
+		AddItem(loadAvg, 1, 1, false).
 		AddItem(uptime, 1, 1, false)
 	leftFlexBordered := createBorderedFrame(leftFlex)
 
