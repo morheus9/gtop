@@ -86,7 +86,6 @@ func main() {
 	loadAvg.SetRect(10, 3, 50, 3)
 
 	updateData := func() {
-		// Получение информации о загрузке
 		loadAvgInfo, err := load.Avg()
 		if err != nil {
 			loadAvg.SetText(fmt.Sprintf("Error retrieving load average: %v", err))
@@ -97,18 +96,16 @@ func main() {
 		loadAvg.SetText(fmt.Sprintf("%.2f    %.2f    %.2f",
 			loadAvgInfo.Load1, loadAvgInfo.Load5, loadAvgInfo.Load15))
 
-		// Получение информации о времени работы
 		uptimeInfo, err := host.Uptime()
 		if err != nil {
 			uptime.SetText(fmt.Sprintf("Error retrieving uptime: %v", err))
 			return
 		}
-		// Преобразование uptime в формат HH:MM:SS
+		// Convert uptime to format HH:MM:SS
 		hours := uptimeInfo / 3600
 		minutes := (uptimeInfo % 3600) / 60
 		seconds := uptimeInfo % 60
-		uptime.SetText(fmt.Sprintf("Uptime: %02d:%02d:%02d", hours, minutes, seconds))
-
+		uptime.SetText(fmt.Sprintf("%02d:%02d:%02d", hours, minutes, seconds))
 	}
 
 	go func() {
@@ -213,13 +210,13 @@ func main() {
 				}{
 					proc: proc,
 					cpu:  cpu,
-					mem:  memInfo.RSS / (1024 * 1024), // В мегабайтах
+					mem:  memInfo.RSS / (1024 * 1024), // To mb
 					name: name,
 					user: user,
 				})
 			}
 
-			// Сортировка процессов
+			// Sorting processes
 			sort.Slice(processData, func(i, j int) bool {
 				if sortBy == "cpu" {
 					return processData[i].cpu > processData[j].cpu
@@ -237,7 +234,7 @@ func main() {
 			processTable.SetCell(0, 3, tview.NewTableCell("Memory Usage Mb").SetTextColor(tcell.ColorLightSkyBlue).SetAlign(tview.AlignCenter))
 			processTable.SetCell(0, 4, tview.NewTableCell("Process Name").SetTextColor(tcell.ColorLightSkyBlue).SetAlign(tview.AlignCenter))
 			for i, data := range processData {
-				if i >= 100 { // Показываем только топ 100 процессов
+				if i >= 100 { // Show only 100 processes
 					break
 				}
 				processTable.SetCell(i+1, 0, tview.NewTableCell(fmt.Sprintf("%d", data.proc.Pid)).SetAlign(tview.AlignCenter))
@@ -269,7 +266,7 @@ func main() {
 		return event
 	})
 
-	wg.Add(4) // Увеличиваем счетчик горутин
+	wg.Add(4) // Increase the goroutine counter
 	go updateCpuGauges()
 	go updateMemGauge()
 	go updateSwapGauge()
@@ -295,5 +292,5 @@ func main() {
 		panic(err)
 	}
 
-	wg.Wait() // Ждем завершения всех горутин
+	wg.Wait() // Waiting for all goroutines to complete
 }
