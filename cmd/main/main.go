@@ -210,7 +210,7 @@ func main() {
 				}{
 					proc: proc,
 					cpu:  cpu,
-					mem:  memInfo.RSS / (1024 * 1024), // To mb
+					mem:  memInfo.RSS / (1024 * 1024), // To Mb
 					name: name,
 					user: user,
 				})
